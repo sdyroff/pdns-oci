@@ -1,0 +1,27 @@
+#!/bin/bash
+
+set -euxo pipefail
+
+newcontainer=$(buildah from scratch)
+scratchmnt=$(buildah mount $newcontainer)
+dnf install --disablerepo=AppStream --installroot $scratchmnt --releasever=8 --setopt install_weak_deps=false -y bash coreutils glibc-langpack-en
+
+dnf --installroot $scratchmnt --releasever=8 --setopt install_weak_deps=false -y install epel-release 
+curl -o $scratchmnt/etc/yum.repos.d/powerdns-auth-43.repo https://repo.powerdns.com/repo-files/centos-auth-43.repo
+dnf --installroot $scratchmnt --releasever=8 --setopt install_weak_deps=false -y install pdns pdns-backend-sqlite
+dnf --installroot $scratchmnt --releasever=8 --setopt install_weak_deps=false -y update
+
+dnf --installroot $scratchmnt clean all
+buildah run $newcontainer -- rm -rf /usr/share/doc
+buildah run $newcontainer -- rm -rf /usr/share/man
+buildah run $newcontainer -- rm -rf /var/cache/dnf
+buildah run $newcontainer -- rm -rf /var/lib/rpm
+buildah run $newcontainer -- rm -rf /var/lib/dnf
+
+
+buildah config --port 53/udp $newcontainer
+buildah config --cmd "/usr/sbin/pdns_server --guardian=no --daemon=no --disable-syslog --log-timestamp=no --write-pid=no" $newcontainer
+buildah commit $newcontainer powerdns
+podman tag powerdns powerdns:4.3-$(date '+%Y%m%d')
+buildah rm $newcontainer
+
